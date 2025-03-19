@@ -1,40 +1,64 @@
 pip install streamlit pandas requests matplotlib folium streamlit-folium
 
-import requests
+import streamlit as st
 import pandas as pd
-import os
+import folium
+from streamlit_folium import folium_static
 
-# Criar pasta para armazenar os dados
-DATA_DIR = "data"
-os.makedirs(DATA_DIR, exist_ok=True)
+# Configuração do título do Dashboard
+st.set_page_config(page_title="Saúde em Minas Gerais", layout="wide")
 
-# Função para buscar dados de mortalidade materna
-def fetch_mortalidade_materna():
-    url = "https://api.datasus.saude.gov.br/mortalidade_materna?uf=MG&ano=2024"
-    response = requests.get(url)
-    
-    if response.status_code == 200:
-        data = response.json()
-        df = pd.DataFrame(data)
-        df.to_csv(os.path.join(DATA_DIR, "mortalidade_materna.csv"), index=False)
-        print("Mortalidade materna atualizada.")
-    else:
-        print("Erro ao acessar a API de mortalidade materna.")
+# Título e introdução
+st.title("📊 Dashboard Comparativo de Saúde - Minas Gerais")
+st.write("Este painel exibe indicadores de saúde para os 853 municípios de MG, com atualização automática via API.")
 
-# Função para buscar dados de dengue
-def fetch_dados_dengue():
-    url = "https://api.datasus.saude.gov.br/dengue?uf=MG&ano=2024"
-    response = requests.get(url)
+# Carregar dados
+@st.cache_data
+def load_data():
+    try:
+        df_mortalidade = pd.read_csv("data/mortalidade_materna.csv")
+        df_dengue = pd.read_csv("data/dengue.csv")
+        return df_mortalidade, df_dengue
+    except:
+        st.error("Erro ao carregar os dados.")
+        return None, None
 
-    if response.status_code == 200:
-        data = response.json()
-        df = pd.DataFrame(data)
-        df.to_csv(os.path.join(DATA_DIR, "dengue.csv"), index=False)
-        print("Casos de dengue atualizados.")
-    else:
-        print("Erro ao acessar a API de dengue.")
+df_mortalidade, df_dengue = load_data()
 
-# Executa a coleta de dados
-if __name__ == "__main__":
-    fetch_mortalidade_materna()
-    fetch_dados_dengue()
+# Criar um seletor de município
+municipios = df_mortalidade["municipio"].unique()
+municipio_selecionado = st.selectbox("Selecione um município:", municipios)
+
+# Exibir dados do município selecionado
+if municipio_selecionado:
+    dados_municipio = df_mortalidade[df_mortalidade["municipio"] == municipio_selecionado]
+    st.subheader(f"📍 Indicadores de Saúde - {municipio_selecionado}")
+
+    # Exibir tabelas de dados
+    st.write("### Mortalidade Materna")
+    st.dataframe(dados_municipio)
+
+    st.write("### Casos de Dengue")
+    dados_dengue_municipio = df_dengue[df_dengue["municipio"] == municipio_selecionado]
+    st.dataframe(dados_dengue_municipio)
+
+# Criar mapa interativo com dados de dengue
+st.write("### 🌍 Mapa de Casos de Dengue")
+
+# Criar mapa
+mapa = folium.Map(location=[-18.5122, -44.5550], zoom_start=6)
+
+for _, row in df_dengue.iterrows():
+    folium.CircleMarker(
+        location=[row["latitude"], row["longitude"]],
+        radius=row["casos"] / 100,  # Ajustar tamanho do círculo proporcionalmente
+        color="red",
+        fill=True,
+        fill_color="red",
+        fill_opacity=0.6,
+        popup=f"{row['municipio']}: {row['casos']} casos",
+    ).add_to(mapa)
+
+# Exibir mapa no Streamlit
+folium_static(mapa)
+
